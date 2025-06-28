@@ -1,0 +1,1 @@
+// Auth route for login/register with email only
