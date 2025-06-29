@@ -5,6 +5,7 @@ import { NodeGlobalsPolyfillPlugin } from '@esbuild-plugins/node-globals-polyfil
 import { NodeModulesPolyfillPlugin } from '@esbuild-plugins/node-modules-polyfill';
 
 export default defineConfig({
+  base: '/', // ✅ Tambahkan ini!
   plugins: [react()],
   resolve: {
     alias: {
@@ -32,8 +33,8 @@ export default defineConfig({
     },
   },
   server: {
-    host: '0.0.0.0',           // Biar bisa diakses dari device lain atau ngrok
-    port: 5173,                // Pastikan sama dengan yang kamu pakai di ngrok
-    allowedHosts: 'all',       // IZINKAN semua host (termasuk semua URL ngrok)
+    host: '0.0.0.0',
+    port: 5173,
+    allowedHosts: 'all',
   },
 });
