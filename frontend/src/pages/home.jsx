@@ -1,23 +1,43 @@
 import React, { useEffect, useState, useRef } from "react";
-import { onValue, ref, push, serverTimestamp } from "firebase/database";
-import { auth, db, storage } from "../firebase";
 import { useNavigate } from "react-router-dom";
-import {
-  ref as storageRef,
-  uploadBytes,
-  getDownloadURL,
-} from "firebase/storage";
+import { onValue, ref, set, getDatabase } from "firebase/database";
+import { auth, db } from "../firebase";
+import { Menu, X } from "lucide-react";
 
 export default function Home() {
   const [users, setUsers] = useState([]);
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [messageInput, setMessageInput] = useState("");
-  const [messages, setMessages] = useState([]);
-  const fileInputRef = useRef();
+  const [currentUserName, setCurrentUserName] = useState("");
+  const [currentUserPhoto, setCurrentUserPhoto] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newPhotoFile, setNewPhotoFile] = useState(null);
+  const [previewPhotoURL, setPreviewPhotoURL] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [showEditMenu, setShowEditMenu] = useState(false);
+  const [lastMessages, setLastMessages] = useState({});
   const navigate = useNavigate();
   const currentUser = auth.currentUser;
 
+  const toBase64 = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = (error) => reject(error);
+    });
+
   useEffect(() => {
+    if (!currentUser) return;
+    const userRef = ref(db, "users/" + currentUser.uid);
+
+    onValue(userRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setCurrentUserName(data.name || currentUser.email);
+        setCurrentUserPhoto(data.photoURL || "https://via.placeholder.com/80");
+        setNewName(data.name || "");
+      }
+    });
+
     const usersRef = ref(db, "users/");
     onValue(usersRef, (snapshot) => {
       const data = snapshot.val();
@@ -26,89 +46,173 @@ export default function Home() {
           .map((uid) => ({
             uid,
             email: data[uid].email,
+            name: data[uid].name,
+            photo: data[uid].photoURL || "https://via.placeholder.com/40",
           }))
-          .filter((user) => user.email !== currentUser?.email);
+          .filter((user) => user.email !== currentUser.email);
         setUsers(userList);
       }
     });
   }, [currentUser]);
 
-  const generateChatId = (email1, email2) => {
-    return [email1, email2].sort().join("_").replace(/\./g, "_");
-  };
-
   useEffect(() => {
-    if (!selectedUser || !currentUser) return;
-    const chatId = generateChatId(currentUser.email, selectedUser.email);
-    const chatRef = ref(db, "chats/" + chatId);
+    if (!currentUser) return;
+    const db = getDatabase();
+    const chatsRef = ref(db, "chats/");
 
-    const unsubscribe = onValue(chatRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const chatMessages = Object.values(data);
-        setMessages(chatMessages);
-      } else {
-        setMessages([]);
-      }
+    onValue(chatsRef, (snapshot) => {
+      const chats = snapshot.val() || {};
+      const latestMessages = {};
+      Object.keys(chats).forEach((roomId) => {
+        const messages = Object.values(chats[roomId]);
+        const lastMessage = messages[messages.length - 1];
+        if (
+          lastMessage?.from === currentUser.uid ||
+          lastMessage?.to === currentUser.uid
+        ) {
+          const otherUid =
+            lastMessage.from === currentUser.uid
+              ? lastMessage.to
+              : lastMessage.from;
+          latestMessages[otherUid] = lastMessage;
+        }
+      });
+      setLastMessages(latestMessages);
     });
+  }, [currentUser]);
 
-    return () => unsubscribe();
-  }, [selectedUser, currentUser]);
-
-  const handleSend = async () => {
-    if (!messageInput.trim() || !currentUser || !selectedUser) return;
-    const chatId = generateChatId(currentUser.email, selectedUser.email);
-    const chatRef = ref(db, "chats/" + chatId);
-
-    await push(chatRef, {
-      from: currentUser.email,
-      to: selectedUser.email,
-      message: messageInput,
-      timestamp: serverTimestamp(),
-    });
-
-    setMessageInput("");
-  };
-
-  const handleImageChange = async (e) => {
+  const handlePhotoSelect = async (e) => {
     const file = e.target.files[0];
-    if (!file || !currentUser || !selectedUser) return;
-
-    const chatId = generateChatId(currentUser.email, selectedUser.email);
-    const imageRef = storageRef(storage, `chatImages/${Date.now()}_${file.name}`);
-
-    await uploadBytes(imageRef, file);
-    const imageUrl = await getDownloadURL(imageRef);
-
-    const chatRef = ref(db, "chats/" + chatId);
-    await push(chatRef, {
-      from: currentUser.email,
-      to: selectedUser.email,
-      imageUrl,
-      timestamp: serverTimestamp(),
-    });
-
-    fileInputRef.current.value = ""; // reset input setelah kirim
+    if (file) {
+      const base64 = await toBase64(file);
+      setNewPhotoFile(base64);
+      setPreviewPhotoURL(base64);
+    }
   };
+
+  const handleSaveProfile = async () => {
+    if (!newName || !currentUser) return;
+
+    setLoading(true);
+    let photoURL = previewPhotoURL || currentUserPhoto;
+
+    try {
+      const userRef = ref(db, "users/" + currentUser.uid);
+      await set(userRef, {
+        email: currentUser.email,
+        name: newName,
+        photoURL: photoURL,
+      });
+
+      setCurrentUserPhoto(photoURL);
+      setCurrentUserName(newName);
+      setNewPhotoFile(null);
+      setPreviewPhotoURL(null);
+      setShowEditMenu(false);
+    } catch (error) {
+      console.error("Gagal menyimpan profil:", error);
+    }
+
+    setLoading(false);
+  };
+
+  const handleUserClick = (user) => {
+    navigate("/chat", {
+      state: {
+        uid: user.uid,
+        email: user.email,
+        photo: user.photo,
+        name: user.name,
+      },
+    });
+  };
+
+  const sortedUsers = users.sort((a, b) => {
+    const aTime = lastMessages[a.uid]?.time || 0;
+    const bTime = lastMessages[b.uid]?.time || 0;
+    return bTime - aTime;
+  });
 
   return (
-    <div className="flex h-screen">
-      {/* Sidebar */}
-      <div className="w-1/4 bg-gray-100 p-4 overflow-y-auto">
-        <h2 className="text-lg font-bold mb-4">Kontak</h2>
-        {users.map((user) => (
+    <div className="flex flex-col h-screen bg-[#f1f1f1] text-black">
+      {/* Header */}
+      <div className="p-4 border-b bg-white shadow flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <img
+            src={previewPhotoURL || currentUserPhoto}
+            alt="profil"
+            className="w-12 h-12 rounded-full border"
+          />
+          <div>
+            <p className="font-bold text-sm">{currentUserName}</p>
+            <p className="text-xs text-gray-600">{currentUser?.email}</p>
+          </div>
+        </div>
+        <button onClick={() => setShowEditMenu(!showEditMenu)}>
+          {showEditMenu ? <X size={24} /> : <Menu size={24} />}
+        </button>
+      </div>
+
+      {/* Edit Profile */}
+      {showEditMenu && (
+        <div className="p-4 border-b bg-white flex flex-col gap-2 animate-slide-down">
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="Nama baru"
+            className="p-2 border rounded"
+          />
+          <label className="cursor-pointer text-blue-600">
+            <span className="underline">Pilih Foto</span>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handlePhotoSelect}
+              className="hidden"
+            />
+          </label>
+          <button
+            onClick={handleSaveProfile}
+            disabled={loading}
+            className={`bg-blue-600 text-white px-3 py-2 rounded ${
+              loading ? "opacity-50 cursor-not-allowed" : ""
+            }`}
+          >
+            {loading ? "Menyimpan..." : "Simpan Perubahan"}
+          </button>
+        </div>
+      )}
+
+      {/* Users List */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {sortedUsers.map((user) => (
           <div
             key={user.uid}
-            className={`p-2 rounded cursor-pointer hover:bg-gray-300 ${
-              selectedUser?.uid === user.uid ? "bg-blue-300" : ""
-            }`}
-            onClick={() => setSelectedUser(user)}
+            className="flex items-center gap-3 p-3 rounded-lg cursor-pointer hover:bg-gray-200"
+            onClick={() => handleUserClick(user)}
           >
-            {user.email}
+            <img
+              src={user.photo}
+              alt="avatar"
+              className="w-10 h-10 rounded-full"
+            />
+            <div>
+              <p className="font-semibold text-sm">{user.name || user.email}</p>
+              <p className="text-xs text-gray-500">
+                {lastMessages[user.uid]?.text
+                  ? lastMessages[user.uid].text.slice(0, 30)
+                  : "Online"}
+              </p>
+            </div>
           </div>
         ))}
+      </div>
+
+      {/* Logout */}
+      <div className="p-4 border-t">
         <button
-          className="mt-4 bg-red-500 text-white px-4 py-2 rounded"
+          className="w-full bg-red-600 text-white py-2 rounded hover:bg-red-700"
           onClick={() => {
             auth.signOut();
             navigate("/");
@@ -116,85 +220,6 @@ export default function Home() {
         >
           Logout
         </button>
-      </div>
-
-      {/* Chat Area */}
-      <div className="w-3/4 p-4 flex flex-col bg-white">
-        {selectedUser ? (
-          <>
-            <h2 className="text-xl font-semibold mb-4">
-              Chat dengan: {selectedUser.email}
-            </h2>
-
-            <div className="flex-1 overflow-y-auto border p-2 mb-4 rounded">
-              {messages.map((msg, index) => (
-                <div
-                  key={index}
-                  className={`mb-3 ${
-                    msg.from === currentUser.email
-                      ? "text-right"
-                      : "text-left"
-                  }`}
-                >
-                  <div className="inline-block bg-gray-100 p-2 rounded">
-                    {msg.message && <p>{msg.message}</p>}
-                    {msg.imageUrl && (
-                      <div>
-                        <p className="text-sm text-gray-500 mb-1">📷 Foto</p>
-                        <img
-                          src={msg.imageUrl}
-                          alt="Gambar"
-                          className="max-w-xs rounded mb-1"
-                        />
-                        <a
-                          href={msg.imageUrl}
-                          download
-                          className="text-blue-500 text-sm underline"
-                        >
-                          ⬇️ Download
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex gap-2">
-              <input
-                type="text"
-                className="flex-1 border p-2 rounded"
-                placeholder="Ketik pesan..."
-                value={messageInput}
-                onChange={(e) => setMessageInput(e.target.value)}
-              />
-              <button
-                onClick={handleSend}
-                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-              >
-                Kirim
-              </button>
-              <input
-                type="file"
-                accept="image/*"
-                ref={fileInputRef}
-                onChange={handleImageChange}
-                className="hidden"
-                id="uploadImage"
-              />
-              <label
-                htmlFor="uploadImage"
-                className="bg-green-600 text-white px-3 py-2 rounded cursor-pointer hover:bg-green-700"
-              >
-                📷
-              </label>
-            </div>
-          </>
-        ) : (
-          <div className="text-center text-gray-500 my-auto">
-            Pilih kontak untuk mulai chat
-          </div>
-        )}
       </div>
     </div>
   );

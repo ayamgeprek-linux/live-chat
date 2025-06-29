@@ -1,18 +1,26 @@
 import React, { useEffect, useState, useRef } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { auth } from "../firebase";
 import {
   getDatabase,
   ref,
   push,
   onValue,
+  serverTimestamp,
 } from "firebase/database";
 
 export default function Chat() {
   const { state } = useLocation();
+  const navigate = useNavigate();
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const chatEndRef = useRef();
+
+  useEffect(() => {
+    if (!state?.uid) {
+      navigate("/home");
+    }
+  }, [state, navigate]);
 
   const roomId =
     auth.currentUser.uid < state.uid
@@ -38,8 +46,9 @@ export default function Chat() {
     const chatRef = ref(db, `chats/${roomId}`);
     await push(chatRef, {
       from: auth.currentUser.uid,
+      to: state.uid,
       text,
-      time: Date.now(),
+      time: serverTimestamp(),
     });
     setText("");
   };
@@ -49,30 +58,55 @@ export default function Chat() {
   };
 
   return (
-    <div className="flex flex-col h-screen">
-      <div className="p-4 bg-blue-600 text-white font-semibold">
-        Chat dengan {state?.email}
+    <div className="flex flex-col h-screen bg-gray-100">
+      {/* Header Chat */}
+      <div className="p-4 bg-blue-600 text-white font-semibold flex items-center gap-3 shadow">
+        <button
+          onClick={() => navigate("/home")}
+          className="text-white text-lg"
+        >
+          ←
+        </button>
+        <img
+          src={state?.photo || "https://via.placeholder.com/40"}
+          alt="avatar"
+          className="w-9 h-9 rounded-full border"
+        />
+        <div>
+          <p className="text-sm font-bold">{state?.name || state?.email}</p>
+          <p className="text-xs text-gray-100">{state?.email}</p>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-gray-100">
+      {/* Pesan-pesan */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {messages.map((msg, index) => (
           <div
             key={index}
-            className={`p-2 rounded max-w-xs ${
+            className={`flex ${
               msg.from === auth.currentUser.uid
-                ? "bg-blue-500 text-white self-end ml-auto"
-                : "bg-white text-black"
+                ? "justify-end"
+                : "justify-start"
             }`}
           >
-            {msg.text}
+            <div
+              className={`p-2 rounded-lg max-w-[70%] break-words ${
+                msg.from === auth.currentUser.uid
+                  ? "bg-blue-500 text-white"
+                  : "bg-white text-black"
+              }`}
+            >
+              {msg.text}
+            </div>
           </div>
         ))}
         <div ref={chatEndRef} />
       </div>
 
+      {/* Input Pesan */}
       <form
         onSubmit={sendMessage}
-        className="p-4 border-t flex items-center gap-2"
+        className="p-4 border-t flex items-center gap-2 bg-white"
       >
         <input
           type="text"
