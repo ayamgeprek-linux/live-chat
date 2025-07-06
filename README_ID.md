@@ -4,11 +4,11 @@
 Ini adalah aplikasi chatting real-time berbasis web yang dibuat menggunakan **React.js** dan **Firebase**. Aplikasi ini memungkinkan pengguna untuk mengirim dan menerima pesan, melihat status online, serta memperbarui profil secara langsung.
 
 ## 👨‍💻 Anggota Kelompok (5 Orang)
-- 👤 Anggota 1 – Pengembangan Frontend & Integrasi Firebase
-- 👤 Anggota 2 – UI/UX dan Tampilan Responsif
-- 👤 Anggota 3 – Otentikasi dan Aturan Firebase
-- 👤 Anggota 4 – Status Online/Offline Pengguna
-- 👤 Anggota 5 – Dokumentasi & Pengujian
+- 👤 harits– Pengembangan Frontend backend & Integrasi Firebase
+- 👤 lala – UI/UX dan Tampilan Responsif
+- 👤 ardi – Otentikasi dan Aturan Firebase
+- 👤tegar – Status Online/Offline Pengguna
+- 👤 ayuk – Dokumentasi & Pengujian
 
 ## 🛠️ Teknologi yang Digunakan
 - **React.js** – Untuk antarmuka pengguna
