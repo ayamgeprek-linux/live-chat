@@ -57,6 +57,20 @@ export default function Chat() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  const formatTime = (timestamp) => {
+    if (!timestamp) return "";
+    if (timestamp.seconds) {
+      return new Date(timestamp.seconds * 1000).toLocaleTimeString("id-ID", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    }
+    return new Date(timestamp).toLocaleTimeString("id-ID", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
   return (
     <div className="flex flex-col h-screen bg-gray-100">
       {/* Header Chat */}
@@ -84,9 +98,7 @@ export default function Chat() {
           <div
             key={index}
             className={`flex ${
-              msg.from === auth.currentUser.uid
-                ? "justify-end"
-                : "justify-start"
+              msg.from === auth.currentUser.uid ? "justify-end" : "justify-start"
             }`}
           >
             <div
@@ -96,7 +108,10 @@ export default function Chat() {
                   : "bg-white text-black"
               }`}
             >
-              {msg.text}
+              <div>{msg.text}</div>
+              <div className="text-[10px] text-gray-300 mt-1 text-right">
+                {formatTime(msg.time)}
+              </div>
             </div>
           </div>
         ))}
