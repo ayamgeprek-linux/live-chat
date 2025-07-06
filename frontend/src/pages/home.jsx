@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { onValue, ref, set, getDatabase } from "firebase/database";
+import { onValue, ref, set } from "firebase/database";
 import { auth, db } from "../firebase";
 import { Menu, X } from "lucide-react";
 
@@ -27,7 +27,15 @@ export default function Home() {
 
   useEffect(() => {
     if (!currentUser) return;
+
     const userRef = ref(db, "users/" + currentUser.uid);
+    const lastSeenRef = ref(db, "users/" + currentUser.uid + "/lastSeen");
+    set(lastSeenRef, Date.now());
+
+    const handleBeforeUnload = () => {
+      set(lastSeenRef, Date.now());
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
 
     onValue(userRef, (snapshot) => {
       const data = snapshot.val();
@@ -48,16 +56,20 @@ export default function Home() {
             email: data[uid].email,
             name: data[uid].name,
             photo: data[uid].photoURL || "https://via.placeholder.com/40",
+            lastSeen: data[uid].lastSeen || null,
           }))
           .filter((user) => user.email !== currentUser.email);
         setUsers(userList);
       }
     });
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
   }, [currentUser]);
 
   useEffect(() => {
     if (!currentUser) return;
-    const db = getDatabase();
     const chatsRef = ref(db, "chats/");
 
     onValue(chatsRef, (snapshot) => {
@@ -92,7 +104,6 @@ export default function Home() {
 
   const handleSaveProfile = async () => {
     if (!newName || !currentUser) return;
-
     setLoading(true);
     let photoURL = previewPhotoURL || currentUserPhoto;
 
@@ -102,8 +113,8 @@ export default function Home() {
         email: currentUser.email,
         name: newName,
         photoURL: photoURL,
+        lastSeen: Date.now(),
       });
-
       setCurrentUserPhoto(photoURL);
       setCurrentUserName(newName);
       setNewPhotoFile(null);
@@ -112,7 +123,6 @@ export default function Home() {
     } catch (error) {
       console.error("Gagal menyimpan profil:", error);
     }
-
     setLoading(false);
   };
 
@@ -123,6 +133,7 @@ export default function Home() {
         email: user.email,
         photo: user.photo,
         name: user.name,
+        lastSeen: user.lastSeen,
       },
     });
   };
@@ -135,7 +146,6 @@ export default function Home() {
 
   return (
     <div className="flex flex-col h-screen bg-[#f1f1f1] text-black">
-      {/* Header */}
       <div className="p-4 border-b bg-white shadow flex items-center justify-between">
         <div className="flex items-center gap-4">
           <img
@@ -153,7 +163,6 @@ export default function Home() {
         </button>
       </div>
 
-      {/* Edit Profile */}
       {showEditMenu && (
         <div className="p-4 border-b bg-white flex flex-col gap-2 animate-slide-down">
           <input
@@ -184,7 +193,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Users List */}
       <div className="flex-1 overflow-y-auto p-4">
         {sortedUsers.map((user) => (
           <div
@@ -209,7 +217,6 @@ export default function Home() {
         ))}
       </div>
 
-      {/* Logout */}
       <div className="p-4 border-t">
         <button
           className="w-full bg-red-600 text-white py-2 rounded hover:bg-red-700"

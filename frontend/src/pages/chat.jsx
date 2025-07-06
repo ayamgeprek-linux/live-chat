@@ -6,7 +6,6 @@ import {
   ref,
   push,
   onValue,
-  serverTimestamp,
 } from "firebase/database";
 
 export default function Chat() {
@@ -14,6 +13,7 @@ export default function Chat() {
   const navigate = useNavigate();
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
+  const [lastSeen, setLastSeen] = useState(state?.lastSeen || null);
   const chatEndRef = useRef();
 
   useEffect(() => {
@@ -42,6 +42,19 @@ export default function Chat() {
 
     return () => unsubscribe();
   }, [roomId]);
+
+  // Real-time lastSeen update
+  useEffect(() => {
+    const db = getDatabase();
+    const lastSeenRef = ref(db, "users/" + state.uid + "/lastSeen");
+
+    const unsubscribe = onValue(lastSeenRef, (snapshot) => {
+      const timestamp = snapshot.val();
+      if (timestamp) setLastSeen(timestamp);
+    });
+
+    return () => unsubscribe();
+  }, [state.uid]);
 
   const sendMessage = async (e) => {
     e.preventDefault();
@@ -115,6 +128,15 @@ export default function Chat() {
     });
   };
 
+  const formatLastSeen = (ts) => {
+    if (!ts) return "tidak diketahui";
+    const now = Date.now();
+    const diff = now - ts;
+
+    if (diff < 10000) return "Online"; // kurang dari 10 detik
+    return new Date(ts).toLocaleString("id-ID");
+  };
+
   return (
     <div className="flex flex-col h-screen bg-gray-100">
       {/* Header */}
@@ -130,9 +152,11 @@ export default function Chat() {
           alt="avatar"
           className="w-9 h-9 rounded-full border"
         />
-        <div className="flex flex-col">
-          <p className="text-sm font-bold">{state?.name || state?.email}</p>
-          <p className="text-xs text-white/80">Terakhir dilihat 3:40:49 PM</p>
+        <div>
+          <p className="text-sm">{state?.name || state?.email}</p>
+          <p className="text-xs text-white/80">
+            Terakhir dilihat {formatLastSeen(lastSeen)}
+          </p>
         </div>
       </div>
 
