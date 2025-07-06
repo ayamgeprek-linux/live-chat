@@ -6,7 +6,9 @@ import {
   ref,
   push,
   onValue,
+  set,
   serverTimestamp,
+  onDisconnect,
 } from "firebase/database";
 
 export default function Chat() {
@@ -14,39 +16,72 @@ export default function Chat() {
   const navigate = useNavigate();
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
+  const [userStatus, setUserStatus] = useState(null);
   const chatEndRef = useRef();
 
+  const db = getDatabase();
+  const uid = auth.currentUser?.uid;
+  const targetUid = state?.uid;
+
   useEffect(() => {
-    if (!state?.uid) {
+    if (!uid || !targetUid) {
       navigate("/home");
     }
-  }, [state, navigate]);
+  }, [uid, targetUid, navigate]);
 
-  const roomId =
-    auth.currentUser.uid < state.uid
-      ? `${auth.currentUser.uid}_${state.uid}`
-      : `${state.uid}_${auth.currentUser.uid}`;
+  const roomId = uid < targetUid ? `${uid}_${targetUid}` : `${targetUid}_${uid}`;
 
+  // 🔁 Listen chat messages
   useEffect(() => {
-    const db = getDatabase();
     const chatRef = ref(db, `chats/${roomId}`);
-    onValue(chatRef, (snapshot) => {
+    const unsubscribe = onValue(chatRef, (snapshot) => {
       const data = snapshot.val() || {};
       const messageList = Object.values(data);
       setMessages(messageList);
       scrollToBottom();
     });
+    return () => unsubscribe();
   }, [roomId]);
 
+  // ⏱️ Update user online status
+  useEffect(() => {
+    if (!uid) return;
+
+    const statusRef = ref(db, `/status/${uid}`);
+    const onlineStatus = {
+      state: "online",
+      last_changed: serverTimestamp(),
+    };
+    const offlineStatus = {
+      state: "offline",
+      last_changed: serverTimestamp(),
+    };
+
+    onDisconnect(statusRef).set(offlineStatus);
+    set(statusRef, onlineStatus);
+  }, [uid]);
+
+  // 👁️ Listen to target user status
+  useEffect(() => {
+    if (!targetUid) return;
+
+    const targetStatusRef = ref(db, `/status/${targetUid}`);
+    const unsubscribe = onValue(targetStatusRef, (snapshot) => {
+      const data = snapshot.val();
+      setUserStatus(data);
+    });
+    return () => unsubscribe();
+  }, [targetUid]);
+
+  // ➤ Send message
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!text.trim()) return;
 
-    const db = getDatabase();
     const chatRef = ref(db, `chats/${roomId}`);
     await push(chatRef, {
-      from: auth.currentUser.uid,
-      to: state.uid,
+      from: uid,
+      to: targetUid,
       text,
       time: serverTimestamp(),
     });
@@ -59,26 +94,15 @@ export default function Chat() {
 
   const formatTime = (timestamp) => {
     if (!timestamp) return "";
-    if (timestamp.seconds) {
-      return new Date(timestamp.seconds * 1000).toLocaleTimeString("id-ID", {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    }
-    return new Date(timestamp).toLocaleTimeString("id-ID", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
   return (
     <div className="flex flex-col h-screen bg-gray-100">
-      {/* Header Chat */}
+      {/* Header */}
       <div className="p-4 bg-blue-600 text-white font-semibold flex items-center gap-3 shadow">
-        <button
-          onClick={() => navigate("/home")}
-          className="text-white text-lg"
-        >
+        <button onClick={() => navigate("/home")} className="text-white text-lg">
           ←
         </button>
         <img
@@ -88,37 +112,40 @@ export default function Chat() {
         />
         <div>
           <p className="text-sm font-bold">{state?.name || state?.email}</p>
-          <p className="text-xs text-gray-100">{state?.email}</p>
+          <p className="text-xs text-gray-100">
+            {userStatus?.state === "online"
+              ? "Sedang online"
+              : userStatus?.last_changed
+              ? `Terakhir dilihat: ${formatTime(userStatus.last_changed)}`
+              : "Status tidak tersedia"}
+          </p>
         </div>
       </div>
 
-      {/* Pesan-pesan */}
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {messages.map((msg, index) => (
           <div
             key={index}
             className={`flex ${
-              msg.from === auth.currentUser.uid ? "justify-end" : "justify-start"
+              msg.from === uid ? "justify-end" : "justify-start"
             }`}
           >
             <div
               className={`p-2 rounded-lg max-w-[70%] break-words ${
-                msg.from === auth.currentUser.uid
+                msg.from === uid
                   ? "bg-blue-500 text-white"
                   : "bg-white text-black"
               }`}
             >
-              <div>{msg.text}</div>
-              <div className="text-[10px] text-gray-300 mt-1 text-right">
-                {formatTime(msg.time)}
-              </div>
+              {msg.text}
             </div>
           </div>
         ))}
         <div ref={chatEndRef} />
       </div>
 
-      {/* Input Pesan */}
+      {/* Input */}
       <form
         onSubmit={sendMessage}
         className="p-4 border-t flex items-center gap-2 bg-white"
