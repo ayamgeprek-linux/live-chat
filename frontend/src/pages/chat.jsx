@@ -155,7 +155,7 @@ export default function Chat() {
         <div>
           <p className="text-sm">{state?.name || state?.email}</p>
           <p className="text-xs text-white/80">
-            Terakhir dilihat {formatLastSeen(lastSeen)}
+             {formatLastSeen(lastSeen)}
           </p>
         </div>
       </div>
